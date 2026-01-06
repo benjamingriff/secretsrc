@@ -4,20 +4,25 @@ import "github.com/charmbracelet/bubbles/key"
 
 // KeyMap defines all key bindings for the application
 type KeyMap struct {
-	Up         key.Binding
-	Down       key.Binding
-	Select     key.Binding
-	Back       key.Binding
-	ViewValue  key.Binding
-	CopyPlain  key.Binding
-	CopyJSON   key.Binding
-	Refresh    key.Binding
-	Profile    key.Binding
-	Region     key.Binding
-	NextPage   key.Binding
-	PrevPage   key.Binding
-	Help       key.Binding
-	Quit       key.Binding
+	Up           key.Binding
+	Down         key.Binding
+	Left         key.Binding
+	Right        key.Binding
+	Select       key.Binding
+	Back         key.Binding
+	ViewValue    key.Binding
+	CopyPlain    key.Binding
+	CopyJSON     key.Binding
+	Refresh      key.Binding
+	Profile      key.Binding
+	Region       key.Binding
+	NextPage     key.Binding
+	PrevPage     key.Binding
+	Filter       key.Binding
+	GridNextPage key.Binding
+	GridPrevPage key.Binding
+	Help         key.Binding
+	Quit         key.Binding
 }
 
 // DefaultKeyMap returns the default key bindings
@@ -30,6 +35,14 @@ func DefaultKeyMap() KeyMap {
 		Down: key.NewBinding(
 			key.WithKeys("down", "j"),
 			key.WithHelp("↓/j", "move down"),
+		),
+		Left: key.NewBinding(
+			key.WithKeys("left", "h"),
+			key.WithHelp("←/h", "move left"),
+		),
+		Right: key.NewBinding(
+			key.WithKeys("right", "l"),
+			key.WithHelp("→/l", "move right"),
 		),
 		Select: key.NewBinding(
 			key.WithKeys("enter"),
@@ -65,11 +78,23 @@ func DefaultKeyMap() KeyMap {
 		),
 		NextPage: key.NewBinding(
 			key.WithKeys("n"),
-			key.WithHelp("n", "next page"),
+			key.WithHelp("n", "next AWS page"),
 		),
 		PrevPage: key.NewBinding(
 			key.WithKeys("b"),
-			key.WithHelp("b", "prev page"),
+			key.WithHelp("b", "prev AWS page"),
+		),
+		Filter: key.NewBinding(
+			key.WithKeys("/"),
+			key.WithHelp("/", "filter"),
+		),
+		GridNextPage: key.NewBinding(
+			key.WithKeys(" ", "pgdown"),
+			key.WithHelp("space/pgdn", "next screen"),
+		),
+		GridPrevPage: key.NewBinding(
+			key.WithKeys("pgup"),
+			key.WithHelp("pgup", "prev screen"),
 		),
 		Help: key.NewBinding(
 			key.WithKeys("?"),

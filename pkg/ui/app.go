@@ -48,7 +48,7 @@ type Model struct {
 	currentPage int          // Current page index in history
 
 	// UI components
-	list            components.SecretList
+	grid            components.SecretGrid
 	profileSelector components.ProfileSelector
 	regionSelector  components.RegionSelector
 	mfaInput        components.MFAInput
@@ -120,7 +120,7 @@ func NewModel(profile, region string) Model {
 		currentProfile: profile,
 		currentRegion:  region,
 		keys:           DefaultKeyMap(),
-		list:           components.NewSecretList(80, 20),
+		grid:           components.NewSecretGrid(80, 20),
 		loading:        true,
 	}
 }
@@ -144,7 +144,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		contentHeight := msg.Height - 10
 		contentWidth := msg.Width - 6
 
-		m.list.SetSize(contentWidth, contentHeight)
+		m.grid.SetSize(contentWidth, contentHeight)
 		// Only resize selectors if they're initialized (i.e., we're on their screen)
 		if m.currentScreen == ScreenProfileSelector {
 			m.profileSelector.SetSize(contentWidth, contentHeight)
@@ -245,7 +245,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.secrets = msg.secrets
 		m.nextToken = msg.nextToken
 		m.hasMore = msg.nextToken != nil
-		m.list.SetSecrets(m.secrets)
+		m.grid.SetSecrets(m.secrets)
 		m.errorMessage = ""
 
 		// Update page history for the current page
@@ -300,7 +300,7 @@ func (m Model) handleSecretListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "enter":
 		// View secret details
-		secret := m.list.SelectedSecret()
+		secret := m.grid.SelectedSecret()
 		if secret != nil {
 			m.currentScreen = ScreenSecretDetail
 			m.secretValue = "" // Clear previous value
@@ -326,7 +326,7 @@ func (m Model) handleSecretListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.secrets = page.secrets
 				m.nextToken = page.nextToken
 				m.hasMore = page.nextToken != nil
-				m.list.SetSecrets(m.secrets)
+				m.grid.SetSecrets(m.secrets)
 				return m, nil
 			}
 			// Need to fetch new page
@@ -343,7 +343,7 @@ func (m Model) handleSecretListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.secrets = page.secrets
 			m.nextToken = page.nextToken
 			m.hasMore = page.nextToken != nil || m.currentPage < len(m.pageHistory)-1
-			m.list.SetSecrets(m.secrets)
+			m.grid.SetSecrets(m.secrets)
 		}
 		return m, nil
 
@@ -370,8 +370,8 @@ func (m Model) handleSecretListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Let the list handle navigation keys (arrows, j/k, etc.)
-	cmd := m.list.Update(msg)
+	// Let the grid handle navigation and filter keys
+	cmd := m.grid.Update(msg)
 	return m, cmd
 }
 
@@ -386,7 +386,7 @@ func (m Model) handleSecretDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "v":
 		// View secret value
-		secret := m.list.SelectedSecret()
+		secret := m.grid.SelectedSecret()
 		if secret != nil && m.secretValue == "" {
 			m.loading = true
 			return m, loadSecretValue(m.awsClient, secret.Name)

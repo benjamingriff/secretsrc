@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -101,7 +100,7 @@ func (m Model) viewFooter() string {
 	var help string
 	switch m.currentScreen {
 	case ScreenSecretList:
-		help = "enter: view | p: profile | g: region | r: refresh | ?: help | q: quit"
+		help = "hjkl/arrows: navigate | enter: view | /: filter | p: profile | g: region | r: refresh | ?: help | q: quit"
 		if m.currentPage > 0 {
 			help += " | b: prev page"
 		}
@@ -139,47 +138,87 @@ func (m Model) viewSecretList() string {
 		return "\n  No secrets found in this region.\n\n  Try switching regions with 'g' or refreshing with 'r'."
 	}
 
-	return m.list.View()
+	// Show filter status if filtering
+	if m.grid.IsFiltering() {
+		filterStatus := fmt.Sprintf("Filter: %s_", m.grid.GetFilterQuery())
+		return fmt.Sprintf("%s\n%s", FilterStatusStyle.Render(filterStatus), m.grid.View())
+	}
+
+	return m.grid.View()
 }
 
 // viewSecretDetail renders the secret detail screen
 func (m Model) viewSecretDetail() string {
-	secret := m.list.SelectedSecret()
+	secret := m.grid.SelectedSecret()
 	if secret == nil {
 		return "No secret selected"
 	}
 
 	var b strings.Builder
 
-	b.WriteString(TitleStyle.Render("Secret Details") + "\n\n")
+	// Title
+	titleStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("205")).
+		MarginBottom(1)
 
-	// Secret metadata
-	b.WriteString(DetailKeyStyle.Render("Name:") + " " + DetailValueStyle.Render(secret.Name) + "\n")
-	b.WriteString(DetailKeyStyle.Render("ARN:") + " " + DetailValueStyle.Render(secret.ARN) + "\n")
+	b.WriteString(titleStyle.Render("Secret Details") + "\n\n")
+
+	// Secret metadata with compact key-value styling
+	keyStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("170")).
+		Bold(true)
+
+	valueStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("252"))
+
+	// Truncate name if too long
+	displayName := secret.Name
+	if len(displayName) > 60 {
+		displayName = displayName[:57] + "..."
+	}
+	b.WriteString(keyStyle.Render("Name: ") + valueStyle.Render(displayName) + "\n")
+
+	// Truncate ARN if too long
+	displayARN := secret.ARN
+	if len(displayARN) > 60 {
+		displayARN = "..." + displayARN[len(displayARN)-57:]
+	}
+	b.WriteString(keyStyle.Render("ARN: ") + valueStyle.Render(displayARN) + "\n")
 
 	if secret.Description != "" {
-		b.WriteString(DetailKeyStyle.Render("Description:") + " " + DetailValueStyle.Render(secret.Description) + "\n")
+		displayDesc := secret.Description
+		if len(displayDesc) > 60 {
+			displayDesc = displayDesc[:57] + "..."
+		}
+		b.WriteString(keyStyle.Render("Description: ") + valueStyle.Render(displayDesc) + "\n")
 	}
 
 	if secret.LastChangedDate != nil {
-		b.WriteString(DetailKeyStyle.Render("Last Modified:") + " " +
-			DetailValueStyle.Render(secret.LastChangedDate.Format(time.RFC1123)) + "\n")
+		b.WriteString(keyStyle.Render("Last Modified: ") +
+			valueStyle.Render(secret.LastChangedDate.Format("Jan 2, 2006 3:04 PM")) + "\n")
 	}
 
 	if len(secret.Tags) > 0 {
-		b.WriteString("\n" + DetailKeyStyle.Render("Tags:") + "\n")
+		b.WriteString("\n" + keyStyle.Render("Tags:") + "\n")
 		for k, v := range secret.Tags {
-			b.WriteString(fmt.Sprintf("  %s: %s\n", k, v))
+			tagStr := fmt.Sprintf("  %s: %s", k, v)
+			if len(tagStr) > 62 {
+				tagStr = tagStr[:59] + "..."
+			}
+			b.WriteString(valueStyle.Render(tagStr) + "\n")
 		}
 	}
 
 	// Secret value section
-	b.WriteString("\n" + strings.Repeat("─", 60) + "\n\n")
+	b.WriteString("\n" + strings.Repeat("─", 70) + "\n\n")
 
 	if m.secretValue == "" {
-		b.WriteString(HelpStyle.Render("Press 'v' to view the secret value\n"))
+		instructionStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("241"))
+		b.WriteString(instructionStyle.Render("Press 'v' to view the secret value") + "\n")
 	} else {
-		b.WriteString(DetailKeyStyle.Render("Secret Value:") + "\n\n")
+		b.WriteString(keyStyle.Render("Secret Value:") + "\n\n")
 
 		// Try to format as JSON if possible
 		var formatted string
@@ -195,16 +234,45 @@ func (m Model) viewSecretDetail() string {
 			formatted = m.secretValue
 		}
 
-		valueStyle := lipgloss.NewStyle().
+		// Limit the displayed value to reasonable size
+		lines := strings.Split(formatted, "\n")
+		maxLines := 15
+		if len(lines) > maxLines {
+			formatted = strings.Join(lines[:maxLines], "\n") + "\n... (truncated)"
+		}
+
+		valueBoxStyle := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("241")).
 			Padding(1).
-			MaxWidth(m.width - 10)
+			Width(66)
 
-		b.WriteString(valueStyle.Render(formatted) + "\n")
+		b.WriteString(valueBoxStyle.Render(formatted) + "\n\n")
+
+		// Copy instructions
+		copyHelpStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("241")).
+			Italic(true)
+		b.WriteString(copyHelpStyle.Render("Press 'c' to copy as plain text | 'j' to copy as JSON"))
 	}
 
-	return b.String()
+	// Wrap in a bordered box
+	boxStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("205")).
+		Padding(1, 2).
+		Width(76)
+
+	boxContent := boxStyle.Render(b.String())
+
+	// Center the box on screen
+	if m.width > 0 && m.height > 0 {
+		return lipgloss.Place(m.width-6, m.height-10,
+			lipgloss.Center, lipgloss.Center,
+			boxContent)
+	}
+
+	return boxContent
 }
 
 // viewHelp renders the help screen
@@ -212,21 +280,30 @@ func (m Model) viewHelp() string {
 	help := `
 AWS Secrets Manager TUI - Help
 
-NAVIGATION
+GRID NAVIGATION
   ↑/k         Move up
   ↓/j         Move down
-  enter       Select item / View secret details
+  ←/h         Move left
+  →/l         Move right
+  enter       View secret details
   esc/q       Go back / Quit
+  space       Next screen (within current page)
+  pgup        Previous screen (within current page)
+
+FILTERING
+  /           Enter filter mode
+  type        Filter secrets by name
+  esc         Exit filter mode
 
 ACTIONS
   v           View secret value (on detail screen)
   c           Copy secret value as plain text
-  j           Copy secret value as JSON
+  j           Copy secret value as JSON (on detail screen)
   r           Refresh secret list
   p           Switch AWS profile
   g           Switch AWS region
-  n           Next page (when available)
-  b           Previous page (when available)
+  n           Next AWS page (load 50 more secrets)
+  b           Previous AWS page
 
 GLOBAL
   ?           Toggle this help

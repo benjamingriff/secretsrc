@@ -66,4 +66,10 @@ var (
 			Foreground(primaryColor).
 			Bold(true).
 			Underline(true)
+
+	// Filter status style (for grid filtering)
+	FilterStatusStyle = lipgloss.NewStyle().
+			Foreground(secondaryColor).
+			Bold(true).
+			MarginBottom(1)
 )
