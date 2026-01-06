@@ -24,7 +24,7 @@ A beautiful TUI (Terminal User Interface) for viewing and managing AWS Secrets M
 
 ```bash
 # Clone the repository
-git clone https://github.com/benjamingriffiths/secretsrc.git
+git clone https://github.com/benjamingriff/secretsrc.git
 cd secretsrc
 
 # Build the binary
@@ -37,7 +37,7 @@ go build -o secretsrc cmd/secretsrc/main.go
 ### Install via Go
 
 ```bash
-go install github.com/benjamingriffiths/secretsrc/cmd/secretsrc@latest
+go install github.com/benjamingriff/secretsrc/cmd/secretsrc@latest
 ```
 
 ## AWS Credentials Setup
