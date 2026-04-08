@@ -8,6 +8,11 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+const (
+	appBorderWidth       = 2
+	appHorizontalPadding = 2
+)
+
 // View renders the model
 func (m Model) View() string {
 	if m.width == 0 || m.height == 0 {
@@ -35,14 +40,11 @@ func (m Model) View() string {
 	header := m.viewHeader()
 	footer := m.viewFooter()
 
-	// Calculate heights for each section
-	// Border takes 2 lines, padding takes 0, header ~3 lines, footer varies (1-4 lines)
-	footerHeight := lipgloss.Height(footer)
-	headerHeight := lipgloss.Height(header)
-	availableHeight := m.height - 4 - headerHeight - footerHeight // 4 for border and padding
+	contentWidth, availableHeight := m.contentViewportSize()
 
 	// Ensure content fills the available height to push footer to bottom
 	contentStyle := lipgloss.NewStyle().
+		Width(contentWidth).
 		Height(availableHeight)
 
 	styledContent := contentStyle.Render(content)
@@ -59,11 +61,22 @@ func (m Model) View() string {
 	appStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("205")).
-		Width(m.width - 2).   // Account for border width
-		Height(m.height - 2). // Account for border height
-		Padding(0, 1)         // Internal padding
+		Width(contentWidth).
+		Height(maxInt(availableHeight+lipgloss.Height(header)+lipgloss.Height(footer), 0)).
+		Padding(0, 1)
 
 	return appStyle.Render(fullContent)
+}
+
+func (m Model) contentViewportSize() (int, int) {
+	innerWidth := maxInt(m.width-appBorderWidth-appHorizontalPadding, 0)
+	innerHeight := maxInt(m.height-appBorderWidth, 0)
+
+	headerHeight := lipgloss.Height(m.viewHeader())
+	footerHeight := lipgloss.Height(m.viewFooter())
+	contentHeight := maxInt(innerHeight-headerHeight-footerHeight, 0)
+
+	return innerWidth, contentHeight
 }
 
 // viewHeader renders the header
@@ -126,6 +139,13 @@ func (m Model) viewFooter() string {
 	}
 
 	return strings.Join(parts, "\n")
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 // viewSecretList renders the secret list screen

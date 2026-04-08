@@ -24,7 +24,7 @@ func GetDefaultRegion() string {
 	if region := os.Getenv("AWS_DEFAULT_REGION"); region != "" {
 		return region
 	}
-	return "us-east-1"
+	return ""
 }
 
 // GetAvailableProfiles reads and returns all available AWS profiles from both ~/.aws/credentials and ~/.aws/config

@@ -8,11 +8,11 @@ import (
 
 	"github.com/atotto/clipboard"
 	awssdk "github.com/aws/aws-sdk-go-v2/aws"
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/benjamingriff/secretsrc/pkg/aws"
 	"github.com/benjamingriff/secretsrc/pkg/config"
 	"github.com/benjamingriff/secretsrc/pkg/models"
 	"github.com/benjamingriff/secretsrc/pkg/ui/components"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // Screen represents the different screens in the app
@@ -140,9 +140,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		// Account for border (2 chars), header (~3 lines), footer (~3 lines), and padding
-		contentHeight := msg.Height - 10
-		contentWidth := msg.Width - 6
+		contentWidth, contentHeight := m.contentViewportSize()
 
 		m.grid.SetSize(contentWidth, contentHeight)
 		// Only resize selectors if they're initialized (i.e., we're on their screen)
@@ -294,6 +292,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // handleSecretListKeys handles key presses on the secret list screen
 func (m Model) handleSecretListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.grid.IsFiltering() {
+		cmd := m.grid.Update(msg)
+		return m, cmd
+	}
+
 	switch msg.String() {
 	case "q", "esc":
 		return m, tea.Quit
