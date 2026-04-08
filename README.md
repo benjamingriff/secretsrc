@@ -17,28 +17,86 @@ A beautiful TUI (Terminal User Interface) for viewing and managing AWS Secrets M
 ### Prerequisites
 
 - Go 1.21 or later
+- `make` (for the convenience targets below)
 - AWS credentials configured (via `aws configure` or environment variables)
 - Required IAM permissions (see below)
 
-### Build from Source
+### Local Development
 
 ```bash
 # Clone the repository
 git clone https://github.com/benjamingriff/secretsrc.git
 cd secretsrc
 
-# Build the binary
-go build -o secretsrc cmd/secretsrc/main.go
+# Show available tasks
+make help
 
-# Run the app
+# Run the app directly from source
+make run
+
+# Run the test suite
+make test
+
+# Build a local binary in the repo root
+make build
 ./secretsrc
 ```
 
-### Install via Go
+### Install on Your Machine
+
+```bash
+cd /path/to/secretsrc
+make install
+```
+
+`make install` runs `go install ./cmd/secretsrc`, which installs `secretsrc` into:
+
+- `$(go env GOBIN)` if `GOBIN` is set
+- otherwise `$(go env GOPATH)/bin`
+
+If `secretsrc` is not directly runnable after install, add your Go bin directory to your `PATH`.
+
+For `zsh`, if `GOBIN` is not set, this is the usual setup:
+
+```bash
+echo 'export PATH="$(go env GOPATH)/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+You can then confirm the install with:
+
+```bash
+command -v secretsrc
+secretsrc
+```
+
+### Install Without Using the Repo
+
+If you want to install the latest published version directly from Go without building from your checkout:
 
 ```bash
 go install github.com/benjamingriff/secretsrc/cmd/secretsrc@latest
 ```
+
+## Updating a Local Install
+
+### If You Installed from This Repo Checkout
+
+```bash
+cd /path/to/secretsrc
+git pull --ff-only
+make install
+```
+
+If you have local uncommitted changes in the repo, either commit them, stash them, or reapply them after pulling before you reinstall.
+
+### If You Installed with `go install ...@latest`
+
+```bash
+go install github.com/benjamingriff/secretsrc/cmd/secretsrc@latest
+```
+
+That fetches the latest version again and replaces the installed `secretsrc` binary in your Go bin directory.
 
 ## AWS Credentials Setup
 
@@ -61,6 +119,8 @@ export AWS_PROFILE=myprofile
 export AWS_REGION=us-west-2
 ./secretsrc
 ```
+
+If you do not set `AWS_REGION`, Secret Src will let the AWS SDK resolve the region from your shared AWS config for the selected profile.
 
 ## Required IAM Permissions
 
@@ -104,13 +164,20 @@ Your AWS user or role needs the following permissions:
 #### Secret List Screen
 - `↑/k` - Move up
 - `↓/j` - Move down
+- `←/h` - Move left
+- `→/l` - Move right
 - `enter` - View secret details
+- `/` - Start filtering by secret name
+- `esc` - Clear the active filter when filtering, otherwise quit
+- `space` / `pgdn` - Move to the next grid screen
+- `pgup` - Move to the previous grid screen
 - `p` - Switch AWS profile
 - `g` - Switch AWS region
 - `r` - Refresh secret list
-- `n` - Load next page (when available)
+- `n` - Load next AWS page (when available)
+- `b` - Load previous AWS page
 - `?` - Toggle help
-- `q` / `esc` - Quit
+- `q` - Quit
 
 #### Secret Detail Screen
 - `v` - View secret value (decrypt and display)
@@ -180,8 +247,8 @@ secretsrc/
 - Check that you're using the correct AWS profile
 
 ### "No secrets found in this region"
-- Try switching to a different region (future feature)
-- Verify that secrets exist in the current region via AWS Console
+- Verify that secrets exist in the current AWS profile and region via the AWS Console or CLI
+- If you rely on profile-specific regions, ensure the correct profile is selected or set `AWS_REGION`
 
 ### Clipboard not working on Linux
 - The `atotto/clipboard` library requires X11 on Linux
@@ -195,7 +262,7 @@ secretsrc/
 - [x] Clipboard copy (plain text & JSON)
 - [x] Interactive profile selector
 - [x] Interactive region selector
-- [ ] Search/filter secrets
+- [x] Search/filter secrets
 - [ ] Secret versioning support
 - [ ] Create/update/delete secrets
 - [ ] Secret rotation status
