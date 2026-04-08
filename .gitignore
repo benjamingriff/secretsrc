@@ -15,9 +15,23 @@ secretsrc
 
 # Output of the go coverage tool
 *.out
+coverage.out
+coverage.html
+.coverprofile
+
+# Profiling
+cpu.prof
+mem.prof
+trace.out
+
+# Local environment
+.env
+.env.*
+!.env.example
 
 # Go workspace file
 go.work
+go.work.sum
 
 # IDE
 .vscode/
