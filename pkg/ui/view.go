@@ -26,6 +26,8 @@ func (m Model) View() string {
 		content = m.viewSecretList()
 	case ScreenSecretDetail:
 		content = m.viewSecretDetail()
+	case ScreenSecretFieldSelector:
+		content = m.viewSecretFieldSelector()
 	case ScreenProfileSelector:
 		content = m.viewProfileSelector()
 	case ScreenRegionSelector:
@@ -125,7 +127,12 @@ func (m Model) viewFooter() string {
 			help = "v: view value | esc: back | q: quit"
 		} else {
 			help = "c: copy plain | j: copy json | esc: back | q: quit"
+			if len(m.secretFields) > 0 {
+				help = "c: copy plain | j: copy json | k: copy field | esc: back | q: quit"
+			}
 		}
+	case ScreenSecretFieldSelector:
+		help = "enter: copy field | esc: back | q: quit"
 	case ScreenProfileSelector:
 		help = "enter: select | esc: back | q: quit"
 	case ScreenRegionSelector:
@@ -273,7 +280,11 @@ func (m Model) viewSecretDetail() string {
 		copyHelpStyle := lipgloss.NewStyle().
 			Foreground(lipgloss.Color("241")).
 			Italic(true)
-		b.WriteString(copyHelpStyle.Render("Press 'c' to copy as plain text | 'j' to copy as JSON"))
+		copyHelp := "Press 'c' to copy as plain text | 'j' to copy as JSON"
+		if len(m.secretFields) > 0 {
+			copyHelp += fmt.Sprintf(" | 'k' to copy a field (%d keys)", len(m.secretFields))
+		}
+		b.WriteString(copyHelpStyle.Render(copyHelp))
 	}
 
 	// Wrap in a bordered box
@@ -319,6 +330,7 @@ ACTIONS
   v           View secret value (on detail screen)
   c           Copy secret value as plain text
   j           Copy secret value as JSON (on detail screen)
+  k           Copy one top-level JSON field (on eligible detail screens)
   r           Refresh secret list
   p           Switch AWS profile
   g           Switch AWS region
@@ -342,6 +354,11 @@ Press '?' to close this help.
 // viewProfileSelector renders the profile selector screen
 func (m Model) viewProfileSelector() string {
 	return m.profileSelector.View()
+}
+
+// viewSecretFieldSelector renders the secret field selector screen.
+func (m Model) viewSecretFieldSelector() string {
+	return m.fieldSelector.View()
 }
 
 // viewRegionSelector renders the region selector screen

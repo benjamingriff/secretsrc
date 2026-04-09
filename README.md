@@ -8,7 +8,7 @@ A beautiful TUI (Terminal User Interface) for viewing and managing AWS Secrets M
 - **AWS Integration**: Uses the AWS SDK for Go v2 to interact with Secrets Manager
 - **Credential Management**: Automatically reads AWS credentials from `~/.aws/` (same as AWS CLI)
 - **On-Demand Secret Fetching**: Secrets are only decrypted when you explicitly request them (security-first)
-- **Clipboard Support**: Copy secret values to clipboard in both plain text and JSON formats
+- **Clipboard Support**: Copy full secret values as plain text or JSON, and copy individual top-level JSON fields
 - **Profile & Region Switching**: Easily switch between AWS profiles and regions
 - **Pagination**: Handles large numbers of secrets with built-in pagination
 
@@ -183,6 +183,7 @@ Your AWS user or role needs the following permissions:
 - `v` - View secret value (decrypt and display)
 - `c` - Copy secret value to clipboard (plain text)
 - `j` - Copy secret value to clipboard (JSON formatted)
+- `k` - Copy a top-level JSON field value from the loaded secret
 - `esc` / `q` - Back to secret list
 - `ctrl+c` - Force quit
 
@@ -199,7 +200,7 @@ Your AWS user or role needs the following permissions:
 2. **Switch Profile/Region**: Press `p` to select a different AWS profile or `g` to select a different region
 3. **View Details**: Press `enter` on a secret to see its metadata (name, ARN, last modified date)
 4. **Decrypt Secret**: Press `v` to fetch and decrypt the secret value (on-demand for security)
-5. **Copy to Clipboard**: Press `c` for plain text or `j` for JSON-formatted copy
+5. **Copy to Clipboard**: Press `c` for plain text, `j` for JSON-formatted copy, or `k` to choose a top-level field from a JSON object secret
 
 ## Security Considerations
 

@@ -13,6 +13,7 @@ type KeyMap struct {
 	ViewValue    key.Binding
 	CopyPlain    key.Binding
 	CopyJSON     key.Binding
+	CopyField    key.Binding
 	Refresh      key.Binding
 	Profile      key.Binding
 	Region       key.Binding
@@ -63,6 +64,10 @@ func DefaultKeyMap() KeyMap {
 		CopyJSON: key.NewBinding(
 			key.WithKeys("j"),
 			key.WithHelp("j", "copy json"),
+		),
+		CopyField: key.NewBinding(
+			key.WithKeys("k"),
+			key.WithHelp("k", "copy field"),
 		),
 		Refresh: key.NewBinding(
 			key.WithKeys("r"),

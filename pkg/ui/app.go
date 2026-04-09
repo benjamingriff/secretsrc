@@ -21,6 +21,7 @@ type Screen int
 const (
 	ScreenSecretList Screen = iota
 	ScreenSecretDetail
+	ScreenSecretFieldSelector
 	ScreenProfileSelector
 	ScreenRegionSelector
 	ScreenMFAInput
@@ -40,6 +41,7 @@ type Model struct {
 	secrets       []models.Secret
 	selectedIndex int
 	secretValue   string
+	secretFields  []components.SecretField
 	nextToken     *string
 	hasMore       bool
 
@@ -49,6 +51,7 @@ type Model struct {
 
 	// UI components
 	grid            components.SecretGrid
+	fieldSelector   components.SecretFieldSelector
 	profileSelector components.ProfileSelector
 	regionSelector  components.RegionSelector
 	mfaInput        components.MFAInput
@@ -150,6 +153,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.currentScreen == ScreenRegionSelector {
 			m.regionSelector.SetSize(contentWidth, contentHeight)
 		}
+		if m.currentScreen == ScreenSecretFieldSelector {
+			m.fieldSelector.SetSize(contentWidth, contentHeight)
+		}
 		return m, nil
 
 	case tea.KeyMsg:
@@ -164,6 +170,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleSecretListKeys(msg)
 		case ScreenSecretDetail:
 			return m.handleSecretDetailKeys(msg)
+		case ScreenSecretFieldSelector:
+			return m.handleSecretFieldSelectorKeys(msg)
 		case ScreenProfileSelector:
 			return m.handleProfileSelectorKeys(msg)
 		case ScreenRegionSelector:
@@ -270,6 +278,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.secretValue = msg.value
+		m.secretFields = parseSecretFields(msg.value)
 		m.errorMessage = ""
 		return m, nil
 
@@ -306,7 +315,7 @@ func (m Model) handleSecretListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		secret := m.grid.SelectedSecret()
 		if secret != nil {
 			m.currentScreen = ScreenSecretDetail
-			m.secretValue = "" // Clear previous value
+			m.clearSecretValueState()
 		}
 		return m, nil
 
@@ -384,7 +393,7 @@ func (m Model) handleSecretDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "q", "esc":
 		// Go back to list
 		m.currentScreen = ScreenSecretList
-		m.secretValue = "" // Clear secret value from memory
+		m.clearSecretValueState()
 		return m, nil
 
 	case "v":
@@ -409,9 +418,38 @@ func (m Model) handleSecretDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, copyToClipboard(m.secretValue, true)
 		}
 		return m, nil
+
+	case "k":
+		// Copy a top-level JSON field value
+		if len(m.secretFields) > 0 {
+			contentWidth, contentHeight := m.contentViewportSize()
+			m.fieldSelector = components.NewSecretFieldSelector(m.secretFields, contentWidth, contentHeight)
+			m.currentScreen = ScreenSecretFieldSelector
+		}
+		return m, nil
 	}
 
 	return m, nil
+}
+
+// handleSecretFieldSelectorKeys handles key presses on the field selector screen.
+func (m Model) handleSecretFieldSelectorKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q", "esc":
+		m.currentScreen = ScreenSecretDetail
+		return m, nil
+
+	case "enter":
+		field := m.fieldSelector.SelectedField()
+		m.currentScreen = ScreenSecretDetail
+		if field != nil {
+			return m, copyToClipboard(field.CopyValue, false)
+		}
+		return m, nil
+	}
+
+	cmd := m.fieldSelector.Update(msg)
+	return m, cmd
 }
 
 // handleProfileSelectorKeys handles key presses on the profile selector screen
@@ -601,6 +639,12 @@ func clearStatusAfter(delay time.Duration) tea.Cmd {
 	return tea.Tick(delay, func(time.Time) tea.Msg {
 		return clearStatusMsg{}
 	})
+}
+
+func (m *Model) clearSecretValueState() {
+	m.secretValue = ""
+	m.secretFields = nil
+	m.fieldSelector = components.SecretFieldSelector{}
 }
 
 // copyToClipboard copies the value to clipboard
