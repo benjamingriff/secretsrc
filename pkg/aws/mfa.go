@@ -75,7 +75,24 @@ func GetMFAConfig(profile string) (*MFAConfig, error) {
 		return nil, err
 	}
 
-	// If this profile has a source_profile, check the source for MFA
+	// If this is a role profile with MFA configured on the target profile,
+	// authenticate the source profile with MFA first, then assume the target role.
+	// This matches the standard AWS config shape:
+	//
+	// [profile target]
+	// role_arn = ...
+	// source_profile = default
+	// mfa_serial = ...
+	if config.SourceProfile != "" && config.MFASerial != "" {
+		return &MFAConfig{
+			MFASerial:     config.MFASerial,
+			Required:      true,
+			SourceProfile: config.SourceProfile,
+		}, nil
+	}
+
+	// If this profile has a source_profile, also support MFA configured on the
+	// source profile itself.
 	if config.SourceProfile != "" {
 		sourceConfig, err := GetProfileConfig(config.SourceProfile)
 		if err != nil {
@@ -90,7 +107,7 @@ func GetMFAConfig(profile string) (*MFAConfig, error) {
 		}
 	}
 
-	// Check if this profile directly has MFA
+	// Check if this profile directly has MFA without role assumption.
 	if config.MFASerial != "" {
 		return &MFAConfig{
 			MFASerial: config.MFASerial,
