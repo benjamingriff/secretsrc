@@ -4,15 +4,17 @@ import (
 	"fmt"
 	"os"
 
-	secretsrcaws "github.com/benjamingriff/secretsrc/pkg/aws"
 	"github.com/benjamingriff/secretsrc/pkg/config"
 	"github.com/benjamingriff/secretsrc/pkg/ui"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 func main() {
-	profile := secretsrcaws.GetDefaultProfile()
-	region := secretsrcaws.GetDefaultRegion()
+	profile := os.Getenv("AWS_PROFILE")
+	region := os.Getenv("AWS_REGION")
+	if region == "" {
+		region = os.Getenv("AWS_DEFAULT_REGION")
+	}
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -22,6 +24,9 @@ func main() {
 
 	if profile == "" {
 		profile = cfg.LastProfile
+	}
+	if profile == "" {
+		profile = "default"
 	}
 	if region == "" {
 		region = cfg.LastRegion
