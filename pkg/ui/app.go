@@ -234,8 +234,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Save profile and region to config for next time
 		go func() {
 			cfg := &config.Config{
-				LastProfile: msg.profile,
-				LastRegion:  msg.region,
+				LastProfile: msg.client.GetProfile(),
+				LastRegion:  msg.client.GetRegion(),
 			}
 			_ = config.Save(cfg) // Ignore errors, don't block UI
 		}()
