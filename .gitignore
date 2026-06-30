@@ -3,7 +3,7 @@
 CLAUDE.md
 
 # Binaries
-secretsrc
+/secretsrc
 *.exe
 *.exe~
 *.dll
