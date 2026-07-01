@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/benjamingriff/secretsrc/pkg/models"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -12,6 +13,11 @@ const (
 	appBorderWidth       = 2
 	appHorizontalPadding = 2
 )
+
+// accent returns the accent colour for the current mode.
+func (m Model) accent() lipgloss.Color {
+	return accentColor(m.mode)
+}
 
 // View renders the model
 func (m Model) View() string {
@@ -62,7 +68,7 @@ func (m Model) View() string {
 	// Create a bordered style that fills the terminal
 	appStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("205")).
+		BorderForeground(m.accent()).
 		Width(contentWidth).
 		Height(maxInt(availableHeight+lipgloss.Height(header)+lipgloss.Height(footer), 0)).
 		Padding(0, 1)
@@ -83,11 +89,20 @@ func (m Model) contentViewportSize() (int, int) {
 
 // viewHeader renders the header
 func (m Model) viewHeader() string {
-	title := "Secret Src - AWS Secrets Manager TUI"
+	title := "Secret Src - AWS Secrets Manager"
+	if m.mode == models.KindParameter {
+		title = "Secret Src - AWS SSM Parameter Store"
+	}
+
+	headerStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(m.accent()).
+		MarginBottom(1)
+
 	info := fmt.Sprintf("Profile: %s | Region: %s", m.currentProfile, m.currentRegion)
 
 	return fmt.Sprintf("%s\n%s",
-		HeaderStyle.Render(title),
+		headerStyle.Render(title),
 		StatusBarStyle.Render(info),
 	)
 }
@@ -115,7 +130,7 @@ func (m Model) viewFooter() string {
 	var help string
 	switch m.currentScreen {
 	case ScreenSecretList:
-		help = "hjkl/arrows: navigate | enter: view | /: filter | p: profile | g: region | r: refresh | ?: help | q: quit"
+		help = "hjkl/arrows: navigate | enter: view | /: filter | tab: switch source | p: profile | g: region | r: refresh | ?: help | q: quit"
 		if m.currentPage > 0 {
 			help += " | b: prev page"
 		}
@@ -123,8 +138,11 @@ func (m Model) viewFooter() string {
 			help += " | n: next page"
 		}
 	case ScreenSecretDetail:
-		if m.secretValue == "" {
+		if m.entryValue == "" {
 			help = "v: view value | esc: back | q: quit"
+		} else if m.mode == models.KindParameter {
+			// Parameters are plain strings: copy plain only.
+			help = "c: copy plain | esc: back | q: quit"
 		} else {
 			help = "c: copy plain | j: copy json | esc: back | q: quit"
 			if len(m.secretFields) > 0 {
@@ -161,8 +179,8 @@ func (m Model) viewSecretList() string {
 		return m.viewHelp()
 	}
 
-	if len(m.secrets) == 0 && !m.loading {
-		return "\n  No secrets found in this region.\n\n  Try switching regions with 'g' or refreshing with 'r'."
+	if len(m.entries) == 0 && !m.loading {
+		return fmt.Sprintf("\n  No %s found in this region.\n\n  Try switching regions with 'g', refreshing with 'r', or 'tab' to switch source.", m.sourceNoun(true))
 	}
 
 	// Show filter status if filtering
@@ -174,24 +192,30 @@ func (m Model) viewSecretList() string {
 	return m.grid.View()
 }
 
-// viewSecretDetail renders the secret detail screen
+// viewSecretDetail renders the entry detail screen
 func (m Model) viewSecretDetail() string {
-	secret := m.grid.SelectedSecret()
-	if secret == nil {
-		return "No secret selected"
+	entry := m.grid.SelectedEntry()
+	if entry == nil {
+		return fmt.Sprintf("No %s selected", m.sourceNoun(false))
 	}
+
+	isParameter := m.mode == models.KindParameter
 
 	var b strings.Builder
 
 	// Title
 	titleStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("205")).
+		Foreground(m.accent()).
 		MarginBottom(1)
 
-	b.WriteString(titleStyle.Render("Secret Details") + "\n\n")
+	title := "Secret Details"
+	if isParameter {
+		title = "Parameter Details"
+	}
+	b.WriteString(titleStyle.Render(title) + "\n\n")
 
-	// Secret metadata with compact key-value styling
+	// Metadata with compact key-value styling
 	keyStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("170")).
 		Bold(true)
@@ -200,35 +224,47 @@ func (m Model) viewSecretDetail() string {
 		Foreground(lipgloss.Color("252"))
 
 	// Truncate name if too long
-	displayName := secret.Name
+	displayName := entry.Name
 	if len(displayName) > 60 {
 		displayName = displayName[:57] + "..."
 	}
 	b.WriteString(keyStyle.Render("Name: ") + valueStyle.Render(displayName) + "\n")
 
 	// Truncate ARN if too long
-	displayARN := secret.ARN
+	displayARN := entry.ARN
 	if len(displayARN) > 60 {
 		displayARN = "..." + displayARN[len(displayARN)-57:]
 	}
 	b.WriteString(keyStyle.Render("ARN: ") + valueStyle.Render(displayARN) + "\n")
 
-	if secret.Description != "" {
-		displayDesc := secret.Description
+	// SSM-only metadata
+	if isParameter {
+		if entry.Type != "" {
+			b.WriteString(keyStyle.Render("Type: ") + valueStyle.Render(entry.Type) + "\n")
+		}
+		if entry.Version != "" {
+			b.WriteString(keyStyle.Render("Version: ") + valueStyle.Render(entry.Version) + "\n")
+		}
+	}
+
+	if entry.Description != "" {
+		displayDesc := entry.Description
 		if len(displayDesc) > 60 {
 			displayDesc = displayDesc[:57] + "..."
 		}
 		b.WriteString(keyStyle.Render("Description: ") + valueStyle.Render(displayDesc) + "\n")
 	}
 
-	if secret.LastChangedDate != nil {
+	if entry.LastModifiedDate != nil {
 		b.WriteString(keyStyle.Render("Last Modified: ") +
-			valueStyle.Render(secret.LastChangedDate.Format("Jan 2, 2006 3:04 PM")) + "\n")
+			valueStyle.Render(entry.LastModifiedDate.Format("Jan 2, 2006 3:04 PM")) + "\n")
 	}
 
-	if len(secret.Tags) > 0 {
+	// Tags are only shown for secrets (Secrets Manager returns them inline;
+	// they are intentionally not fetched for parameters).
+	if len(entry.Tags) > 0 {
 		b.WriteString("\n" + keyStyle.Render("Tags:") + "\n")
-		for k, v := range secret.Tags {
+		for k, v := range entry.Tags {
 			tagStr := fmt.Sprintf("  %s: %s", k, v)
 			if len(tagStr) > 62 {
 				tagStr = tagStr[:59] + "..."
@@ -237,28 +273,29 @@ func (m Model) viewSecretDetail() string {
 		}
 	}
 
-	// Secret value section
+	// Value section
 	b.WriteString("\n" + strings.Repeat("─", 70) + "\n\n")
 
-	if m.secretValue == "" {
+	if m.entryValue == "" {
 		instructionStyle := lipgloss.NewStyle().
 			Foreground(lipgloss.Color("241"))
-		b.WriteString(instructionStyle.Render("Press 'v' to view the secret value") + "\n")
+		b.WriteString(instructionStyle.Render(fmt.Sprintf("Press 'v' to view the %s value", m.sourceNoun(false))) + "\n")
 	} else {
-		b.WriteString(keyStyle.Render("Secret Value:") + "\n\n")
+		valueLabel := "Secret Value:"
+		if isParameter {
+			valueLabel = "Parameter Value:"
+		}
+		b.WriteString(keyStyle.Render(valueLabel) + "\n\n")
 
-		// Try to format as JSON if possible
-		var formatted string
-		var jsonData interface{}
-		if err := json.Unmarshal([]byte(m.secretValue), &jsonData); err == nil {
-			prettyJSON, err := json.MarshalIndent(jsonData, "", "  ")
-			if err == nil {
-				formatted = string(prettyJSON)
-			} else {
-				formatted = m.secretValue
+		// Secrets are pretty-printed if they are JSON; parameters are plain strings.
+		formatted := m.entryValue
+		if !isParameter {
+			var jsonData interface{}
+			if err := json.Unmarshal([]byte(m.entryValue), &jsonData); err == nil {
+				if prettyJSON, err := json.MarshalIndent(jsonData, "", "  "); err == nil {
+					formatted = string(prettyJSON)
+				}
 			}
-		} else {
-			formatted = m.secretValue
 		}
 
 		// Limit the displayed value to reasonable size
@@ -280,9 +317,12 @@ func (m Model) viewSecretDetail() string {
 		copyHelpStyle := lipgloss.NewStyle().
 			Foreground(lipgloss.Color("241")).
 			Italic(true)
-		copyHelp := "Press 'c' to copy as plain text | 'j' to copy as JSON"
-		if len(m.secretFields) > 0 {
-			copyHelp += fmt.Sprintf(" | 'k' to copy a field (%d keys)", len(m.secretFields))
+		copyHelp := "Press 'c' to copy as plain text"
+		if !isParameter {
+			copyHelp += " | 'j' to copy as JSON"
+			if len(m.secretFields) > 0 {
+				copyHelp += fmt.Sprintf(" | 'k' to copy a field (%d keys)", len(m.secretFields))
+			}
 		}
 		b.WriteString(copyHelpStyle.Render(copyHelp))
 	}
@@ -290,7 +330,7 @@ func (m Model) viewSecretDetail() string {
 	// Wrap in a bordered box
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("205")).
+		BorderForeground(m.accent()).
 		Padding(1, 2).
 		Width(76)
 
@@ -337,12 +377,17 @@ ACTIONS
   n           Next AWS page (load 50 more secrets)
   b           Previous AWS page
 
+SOURCE
+  tab         Switch between Secrets Manager (pink) and
+              SSM Parameter Store (green)
+
 GLOBAL
   ?           Toggle this help
   ctrl+c      Force quit
 
 SECURITY NOTE
-  • Secret values are only fetched on-demand (when you press 'v')
+  • Values are only fetched on-demand (when you press 'v')
+  • SecureString parameters are decrypted on fetch (needs kms:Decrypt)
   • Values are cleared from memory when you navigate away
   • Clipboard contents persist after app closes
 

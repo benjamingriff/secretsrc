@@ -9,7 +9,7 @@ import (
 )
 
 // ListSecrets lists secrets from AWS Secrets Manager with pagination support
-func (c *Client) ListSecrets(ctx context.Context, maxResults int32, nextToken *string) ([]models.Secret, *string, error) {
+func (c *Client) ListSecrets(ctx context.Context, maxResults int32, nextToken *string) ([]models.Entry, *string, error) {
 	input := &secretsmanager.ListSecretsInput{
 		MaxResults: &maxResults,
 	}
@@ -23,29 +23,30 @@ func (c *Client) ListSecrets(ctx context.Context, maxResults int32, nextToken *s
 		return nil, nil, fmt.Errorf("failed to list secrets: %w", err)
 	}
 
-	secrets := make([]models.Secret, 0, len(result.SecretList))
-	for _, entry := range result.SecretList {
-		secret := models.Secret{
-			ARN:             stringValue(entry.ARN),
-			Name:            stringValue(entry.Name),
-			Description:     stringValue(entry.Description),
-			LastChangedDate: entry.LastChangedDate,
+	entries := make([]models.Entry, 0, len(result.SecretList))
+	for _, item := range result.SecretList {
+		entry := models.Entry{
+			Kind:             models.KindSecret,
+			ARN:              stringValue(item.ARN),
+			Name:             stringValue(item.Name),
+			Description:      stringValue(item.Description),
+			LastModifiedDate: item.LastChangedDate,
 		}
 
-		// Convert tags
-		if len(entry.Tags) > 0 {
-			secret.Tags = make(map[string]string)
-			for _, tag := range entry.Tags {
+		// Convert tags (returned inline by Secrets Manager)
+		if len(item.Tags) > 0 {
+			entry.Tags = make(map[string]string)
+			for _, tag := range item.Tags {
 				if tag.Key != nil && tag.Value != nil {
-					secret.Tags[*tag.Key] = *tag.Value
+					entry.Tags[*tag.Key] = *tag.Value
 				}
 			}
 		}
 
-		secrets = append(secrets, secret)
+		entries = append(entries, entry)
 	}
 
-	return secrets, result.NextToken, nil
+	return entries, result.NextToken, nil
 }
 
 // GetSecretValue retrieves and decrypts a secret value

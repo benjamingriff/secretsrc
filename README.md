@@ -1,16 +1,16 @@
 # Secret Src
 
-A beautiful TUI (Terminal User Interface) for viewing and managing AWS Secrets Manager secrets, built with Go and [Bubble Tea](https://github.com/charmbracelet/bubbletea).
+A beautiful TUI (Terminal User Interface) for viewing AWS Secrets Manager secrets **and SSM Parameter Store parameters**, built with Go and [Bubble Tea](https://github.com/charmbracelet/bubbletea).
 
 ## Features
 
 - **Beautiful TUI**: Built with Charm's Bubble Tea framework for a polished terminal experience
-- **AWS Integration**: Uses the AWS SDK for Go v2 to interact with Secrets Manager
-- **Credential Management**: Automatically reads AWS credentials from `~/.aws/` (same as AWS CLI)
-- **On-Demand Secret Fetching**: Secrets are only decrypted when you explicitly request them (security-first)
-- **Clipboard Support**: Copy full secret values as plain text or JSON, and copy individual top-level JSON fields
+- **Two sources, one app**: Browse AWS Secrets Manager secrets and SSM Parameter Store parameters, and switch between them instantly with `tab`. The whole UI recolours as a mode signal — **pink** for Secrets Manager, **fluoro green** for SSM. The last-used source is remembered between launches.
+- **Shared credentials**: Both sources reuse the same profile, region, and MFA/role-assumption setup
+- **On-Demand Fetching**: Values are only fetched (and SecureString parameters decrypted) when you explicitly request them (security-first)
+- **Clipboard Support**: Copy full values as plain text; for JSON secrets, copy as formatted JSON or copy an individual top-level field
 - **Profile & Region Switching**: Easily switch between AWS profiles and regions
-- **Pagination**: Handles large numbers of secrets with built-in pagination
+- **Pagination**: Handles large numbers of secrets/parameters with built-in pagination
 
 ## Installation
 
@@ -142,50 +142,60 @@ Your AWS user or role needs the following permissions:
     {
       "Effect": "Allow",
       "Action": [
+        "ssm:DescribeParameters",
+        "ssm:GetParameter"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
         "kms:Decrypt"
       ],
-      "Resource": "*",
-      "Condition": {
-        "StringEquals": {
-          "kms:ViaService": "secretsmanager.*.amazonaws.com"
-        }
-      }
+      "Resource": "*"
     }
   ]
 }
 ```
 
-**Note**: The KMS decrypt permission is only needed if your secrets are encrypted with custom KMS keys.
+**Notes**:
+- The `ssm:*` permissions are only needed if you use the SSM Parameter Store view (`tab` to switch to it).
+- The `kms:Decrypt` permission is needed to read secrets encrypted with custom KMS keys and to decrypt `SecureString` parameters. If you don't have it, listing still works (metadata only), but viewing a `SecureString` value returns an access-denied error.
 
 ## Usage
 
 ### Key Bindings
 
-#### Secret List Screen
+#### List Screen
 - `↑/k` - Move up
 - `↓/j` - Move down
 - `←/h` - Move left
 - `→/l` - Move right
-- `enter` - View secret details
-- `/` - Start filtering by secret name
+- `enter` - View details
+- `tab` - **Switch source** between Secrets Manager (pink) and SSM Parameter Store (green)
+- `/` - Start filtering by name
 - `esc` - Clear the active filter when filtering, otherwise quit
 - `space` / `pgdn` - Move to the next grid screen
 - `pgup` - Move to the previous grid screen
 - `p` - Switch AWS profile
 - `g` - Switch AWS region
-- `r` - Refresh secret list
+- `r` - Refresh the list
 - `n` - Load next AWS page (when available)
 - `b` - Load previous AWS page
 - `?` - Toggle help
 - `q` - Quit
 
-#### Secret Detail Screen
-- `v` - View secret value (decrypt and display)
-- `c` - Copy secret value to clipboard (plain text)
-- `j` - Copy secret value to clipboard (JSON formatted)
-- `k` - Copy a top-level JSON field value from the loaded secret
-- `esc` / `q` - Back to secret list
+`tab` works from any screen and returns you to the list in the new source.
+
+#### Detail Screen
+- `v` - View the value (decrypt and display; `SecureString` parameters are decrypted on fetch)
+- `c` - Copy the value to clipboard (plain text)
+- `j` - Copy the value as formatted JSON *(Secrets Manager only)*
+- `k` - Copy a top-level JSON field from the loaded secret *(Secrets Manager only)*
+- `esc` / `q` - Back to the list
 - `ctrl+c` - Force quit
+
+> SSM parameters are treated as plain strings, so the detail screen offers only `v` and `c` — there is no JSON field picker.
 
 #### Profile & Region Selector Screens
 - `↑/k` - Move up in list
@@ -196,16 +206,17 @@ Your AWS user or role needs the following permissions:
 
 ### Workflow
 
-1. **Browse Secrets**: Launch the app to see a list of all secrets in your current AWS region
-2. **Switch Profile/Region**: Press `p` to select a different AWS profile or `g` to select a different region
-3. **View Details**: Press `enter` on a secret to see its metadata (name, ARN, last modified date)
-4. **Decrypt Secret**: Press `v` to fetch and decrypt the secret value (on-demand for security)
-5. **Copy to Clipboard**: Press `c` for plain text, `j` for JSON-formatted copy, or `k` to choose a top-level field from a JSON object secret
+1. **Browse**: Launch the app to see a list of all secrets (or parameters) in your current AWS region
+2. **Switch Source**: Press `tab` to flip between Secrets Manager and SSM Parameter Store — the UI recolours to tell you which one you're in
+3. **Switch Profile/Region**: Press `p` to select a different AWS profile or `g` to select a different region (shared across both sources)
+4. **View Details**: Press `enter` on an item to see its metadata (name, ARN, last modified date; plus type and version for parameters)
+5. **Fetch Value**: Press `v` to fetch the value on-demand (`SecureString` parameters are decrypted at this point)
+6. **Copy to Clipboard**: Press `c` for plain text. For JSON secrets, press `j` for a JSON-formatted copy or `k` to choose a top-level field
 
 ## Security Considerations
 
-- **On-Demand Fetching**: Secret values are never automatically fetched or displayed. You must explicitly press `v` to decrypt them.
-- **Memory Clearing**: Secret values are cleared from memory when you navigate away from the detail screen.
+- **On-Demand Fetching**: Values are never automatically fetched or displayed. You must explicitly press `v` to decrypt them. Listing (both secrets and parameters) returns metadata only — never values.
+- **Memory Clearing**: Values are cleared from memory when you navigate away from the detail screen or switch source with `tab`.
 - **Alternate Screen**: The app uses the terminal's alternate screen buffer, so secrets don't remain in scrollback history.
 - **Clipboard Persistence**: Be aware that copied secrets will remain in your clipboard after the app closes. Clear your clipboard if needed.
 
@@ -218,18 +229,19 @@ secretsrc/
 │       └── main.go                 # Application entry point
 ├── pkg/
 │   ├── aws/
-│   │   ├── client.go               # AWS client initialization
+│   │   ├── client.go               # AWS client initialization (Secrets Manager + SSM)
 │   │   ├── secrets.go              # Secrets Manager operations
+│   │   ├── parameters.go           # SSM Parameter Store operations
 │   │   └── config.go               # Profile/region management
 │   ├── models/
-│   │   └── secret.go               # Data structures
+│   │   └── entry.go                # Shared Entry data structure (secrets + parameters)
 │   └── ui/
-│       ├── app.go                  # Main Bubble Tea model
-│       ├── view.go                 # View rendering
+│       ├── app.go                  # Main Bubble Tea model, mode toggle
+│       ├── view.go                 # View rendering (mode-aware colours)
 │       ├── keys.go                 # Key bindings
-│       ├── styles.go               # Lipgloss styles
+│       ├── styles.go               # Lipgloss styles + accent colours
 │       └── components/
-│           ├── list.go             # Secret list component
+│           ├── grid.go             # Entry grid component
 │           ├── profile_selector.go # Profile selection
 │           └── region_selector.go  # Region selection
 ├── go.mod
@@ -243,13 +255,17 @@ secretsrc/
 - Run `aws configure` to set up your credentials
 - Or set `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` environment variables
 
-### "Failed to load secrets: AccessDeniedException"
-- Ensure your AWS user/role has the required IAM permissions (see above)
+### "Failed to load secrets/parameters: AccessDeniedException"
+- Ensure your AWS user/role has the required IAM permissions (see above) — note the separate `ssm:*` actions for the Parameter Store view
 - Check that you're using the correct AWS profile
 
-### "No secrets found in this region"
-- Verify that secrets exist in the current AWS profile and region via the AWS Console or CLI
+### "Failed to load value: AccessDeniedException" on a SecureString parameter
+- Reading a `SecureString` value decrypts it, which requires `kms:Decrypt` on the parameter's KMS key. Listing still works without it.
+
+### "No secrets/parameters found in this region"
+- Verify that the items exist in the current AWS profile and region via the AWS Console or CLI
 - If you rely on profile-specific regions, ensure the correct profile is selected or set `AWS_REGION`
+- Remember you may just be in the other source — press `tab` to switch
 
 ### Clipboard not working on Linux
 - The `atotto/clipboard` library requires X11 on Linux
@@ -264,6 +280,7 @@ secretsrc/
 - [x] Interactive profile selector
 - [x] Interactive region selector
 - [x] Search/filter secrets
+- [x] SSM Parameter Store support (toggle with `tab`)
 - [ ] Secret versioning support
 - [ ] Create/update/delete secrets
 - [ ] Secret rotation status
