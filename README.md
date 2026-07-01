@@ -5,7 +5,7 @@ A beautiful TUI (Terminal User Interface) for viewing AWS Secrets Manager secret
 ## Features
 
 - **Beautiful TUI**: Built with Charm's Bubble Tea framework for a polished terminal experience
-- **Two sources, one app**: Browse AWS Secrets Manager secrets and SSM Parameter Store parameters, and switch between them instantly with `tab`. The whole UI recolours as a mode signal — **fluoro pink** for Secrets Manager, **fluoro green** for SSM. The last-used source is remembered between launches.
+- **Two sources, one app**: Browse AWS Secrets Manager secrets and SSM Parameter Store parameters, and switch between them instantly with `tab`. The whole UI recolours as a mode signal — **pink** for Secrets Manager, **fluoro green** for SSM. The last-used source is remembered between launches.
 - **Shared credentials**: Both sources reuse the same profile, region, and MFA/role-assumption setup
 - **On-Demand Fetching**: Values are only fetched (and SecureString parameters decrypted) when you explicitly request them (security-first)
 - **Clipboard Support**: Copy full values as plain text; for JSON secrets, copy as formatted JSON or copy an individual top-level field

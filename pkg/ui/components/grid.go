@@ -17,7 +17,7 @@ const (
 
 	// defaultAccent is the fallback selected-cell colour used until the app
 	// sets a mode-specific accent via SetAccentColor.
-	defaultAccent = lipgloss.Color("#FF10F0")
+	defaultAccent = lipgloss.Color("205")
 )
 
 // Grid displays entries (secrets or parameters) in a 2D grid layout.
