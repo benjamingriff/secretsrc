@@ -6,11 +6,14 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
+	"github.com/aws/aws-sdk-go-v2/service/ssm"
 )
 
-// Client wraps the AWS SDK client for Secrets Manager
+// Client wraps the AWS SDK clients for Secrets Manager and SSM Parameter Store.
+// Both share the same underlying credentials and region.
 type Client struct {
 	sm      *secretsmanager.Client
+	ssm     *ssm.Client
 	profile string
 	region  string
 }
@@ -33,11 +36,9 @@ func NewClient(ctx context.Context, profile, region string) (*Client, error) {
 		return nil, fmt.Errorf("failed to load AWS config: %w", err)
 	}
 
-	// Create Secrets Manager client
-	sm := secretsmanager.NewFromConfig(cfg)
-
 	return &Client{
-		sm:      sm,
+		sm:      secretsmanager.NewFromConfig(cfg),
+		ssm:     ssm.NewFromConfig(cfg),
 		profile: profile,
 		region:  cfg.Region,
 	}, nil

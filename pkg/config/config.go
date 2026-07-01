@@ -12,6 +12,7 @@ import (
 type Config struct {
 	LastProfile string `json:"last_profile"`
 	LastRegion  string `json:"last_region"`
+	LastMode    string `json:"last_mode"`
 }
 
 // CachedCredentials represents cached AWS credentials

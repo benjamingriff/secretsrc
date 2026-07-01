@@ -1,6 +1,24 @@
 package ui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"github.com/benjamingriff/secretsrc/pkg/models"
+	"github.com/charmbracelet/lipgloss"
+)
+
+// Mode accent colours. Fluoro pink signals Secrets Manager; fluoro green
+// signals SSM Parameter Store.
+const (
+	accentSecretsManager = lipgloss.Color("#FF10F0") // Fluoro pink
+	accentSSM            = lipgloss.Color("#39FF14") // Fluoro green
+)
+
+// accentColor returns the accent colour for the given mode.
+func accentColor(mode models.Kind) lipgloss.Color {
+	if mode == models.KindParameter {
+		return accentSSM
+	}
+	return accentSecretsManager
+}
 
 var (
 	// Colors
@@ -69,7 +87,7 @@ var (
 
 	// Filter status style (for grid filtering)
 	FilterStatusStyle = lipgloss.NewStyle().
-			Foreground(secondaryColor).
-			Bold(true).
-			MarginBottom(1)
+				Foreground(secondaryColor).
+				Bold(true).
+				MarginBottom(1)
 )

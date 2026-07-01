@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
+	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"gopkg.in/ini.v1"
 )
@@ -181,11 +182,9 @@ func NewClientWithMFA(ctx context.Context, profile, region string, creds aws.Cre
 		return nil, fmt.Errorf("failed to load AWS config with MFA credentials: %w", err)
 	}
 
-	// Create Secrets Manager client
-	sm := secretsmanager.NewFromConfig(cfg)
-
 	return &Client{
-		sm:      sm,
+		sm:      secretsmanager.NewFromConfig(cfg),
+		ssm:     ssm.NewFromConfig(cfg),
 		profile: profile,
 		region:  cfg.Region,
 	}, nil
@@ -258,11 +257,9 @@ func NewClientWithMFAForRole(ctx context.Context, profile, region string, source
 		return nil, fmt.Errorf("failed to create config with assumed role credentials: %w", err)
 	}
 
-	// Create Secrets Manager client with assumed role credentials
-	sm := secretsmanager.NewFromConfig(roleConfig)
-
 	return &Client{
-		sm:      sm,
+		sm:      secretsmanager.NewFromConfig(roleConfig),
+		ssm:     ssm.NewFromConfig(roleConfig),
 		profile: profile,
 		region:  roleConfig.Region,
 	}, nil

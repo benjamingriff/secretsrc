@@ -32,7 +32,7 @@ func main() {
 		region = cfg.LastRegion
 	}
 
-	program := tea.NewProgram(ui.NewModel(profile, region), tea.WithAltScreen())
+	program := tea.NewProgram(ui.NewModel(profile, region, ui.ParseMode(cfg.LastMode)), tea.WithAltScreen())
 	if _, err := program.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to run secretsrc: %v\n", err)
 		os.Exit(1)

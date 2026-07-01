@@ -4,62 +4,73 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/benjamingriff/secretsrc/pkg/models"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/benjamingriff/secretsrc/pkg/models"
 )
 
 const (
-	MinCellWidth      = 35  // Minimum cell width
-	MaxCellWidth      = 60  // Maximum cell width
+	MinCellWidth      = 35 // Minimum cell width
+	MaxCellWidth      = 60 // Maximum cell width
 	DefaultCellHeight = 4
 	CellSpacing       = 2 // Space between cells
+
+	// defaultAccent is the fallback selected-cell colour used until the app
+	// sets a mode-specific accent via SetAccentColor.
+	defaultAccent = lipgloss.Color("#FF10F0")
 )
 
-// SecretGrid displays secrets in a 2D grid layout
-type SecretGrid struct {
-	secrets         []models.Secret  // All secrets
-	filteredSecrets []models.Secret  // Filtered secrets (used for display)
-	cursorRow       int              // Current cursor row (0-based)
-	cursorCol       int              // Current cursor column (0-based)
-	numCols         int              // Number of columns in grid
-	numRows         int              // Number of rows visible on screen
-	cellWidth       int              // Calculated cell width based on available space
-	gridPageIndex   int              // Current screen page index
-	totalGridPages  int              // Total screen pages for filtered secrets
-	width           int              // Available width
-	height          int              // Available height
-	filterQuery     string           // Current filter text
-	filtering       bool             // Whether filter mode is active
+// Grid displays entries (secrets or parameters) in a 2D grid layout.
+type Grid struct {
+	entries         []models.Entry // All entries
+	filteredEntries []models.Entry // Filtered entries (used for display)
+	cursorRow       int            // Current cursor row (0-based)
+	cursorCol       int            // Current cursor column (0-based)
+	numCols         int            // Number of columns in grid
+	numRows         int            // Number of rows visible on screen
+	cellWidth       int            // Calculated cell width based on available space
+	gridPageIndex   int            // Current screen page index
+	totalGridPages  int            // Total screen pages for filtered entries
+	width           int            // Available width
+	height          int            // Available height
+	filterQuery     string         // Current filter text
+	filtering       bool           // Whether filter mode is active
+	accentColor     lipgloss.Color // Colour used for the selected cell
 }
 
-// NewSecretGrid creates a new secret grid component
-func NewSecretGrid(width, height int) SecretGrid {
-	g := SecretGrid{
-		secrets:         []models.Secret{},
-		filteredSecrets: []models.Secret{},
+// NewGrid creates a new entry grid component
+func NewGrid(width, height int) Grid {
+	g := Grid{
+		entries:         []models.Entry{},
+		filteredEntries: []models.Entry{},
 		cursorRow:       0,
 		cursorCol:       0,
 		width:           width,
 		height:          height,
 		filterQuery:     "",
 		filtering:       false,
+		accentColor:     defaultAccent,
 	}
 	g.calculateGridDimensions()
 	return g
 }
 
-// SetSecrets updates the grid with new secrets
-func (g *SecretGrid) SetSecrets(secrets []models.Secret) {
-	g.secrets = secrets
+// SetEntries updates the grid with new entries
+func (g *Grid) SetEntries(entries []models.Entry) {
+	g.entries = entries
 	g.applyFilter(g.filterQuery)
 	g.cursorRow = 0
 	g.cursorCol = 0
 	g.gridPageIndex = 0
 }
 
+// SetAccentColor sets the colour used to highlight the selected cell.
+func (g *Grid) SetAccentColor(color lipgloss.Color) {
+	g.accentColor = color
+}
+
 // SetSize updates the grid dimensions
-func (g *SecretGrid) SetSize(width, height int) {
+func (g *Grid) SetSize(width, height int) {
 	g.width = width
 	g.height = height
 	g.calculateGridDimensions()
@@ -67,7 +78,7 @@ func (g *SecretGrid) SetSize(width, height int) {
 }
 
 // calculateGridDimensions calculates numCols, numRows, cellWidth, and totalGridPages
-func (g *SecretGrid) calculateGridDimensions() {
+func (g *Grid) calculateGridDimensions() {
 	// Calculate rows based on available height
 	cellHeight := DefaultCellHeight + 1
 	g.numRows = max(1, g.height/cellHeight)
@@ -112,9 +123,9 @@ func (g *SecretGrid) calculateGridDimensions() {
 	g.cellWidth = optimalWidth
 
 	// Calculate total grid pages
-	secretsPerPage := g.numCols * g.numRows
-	if secretsPerPage > 0 && len(g.filteredSecrets) > 0 {
-		g.totalGridPages = (len(g.filteredSecrets) + secretsPerPage - 1) / secretsPerPage
+	entriesPerPage := g.numCols * g.numRows
+	if entriesPerPage > 0 && len(g.filteredEntries) > 0 {
+		g.totalGridPages = (len(g.filteredEntries) + entriesPerPage - 1) / entriesPerPage
 	} else {
 		g.totalGridPages = 1
 	}
@@ -126,12 +137,12 @@ func (g *SecretGrid) calculateGridDimensions() {
 }
 
 // validateCursorPosition ensures cursor is within valid bounds
-func (g *SecretGrid) validateCursorPosition() {
+func (g *Grid) validateCursorPosition() {
 	// Get current flat index
 	idx := g.cursorIndex()
-	visibleSecrets := g.getVisibleSecrets()
+	visibleEntries := g.getVisibleEntries()
 
-	if idx >= len(visibleSecrets) {
+	if idx >= len(visibleEntries) {
 		// Reset to first position
 		g.cursorRow = 0
 		g.cursorCol = 0
@@ -139,37 +150,37 @@ func (g *SecretGrid) validateCursorPosition() {
 }
 
 // cursorIndex returns the flat index of the current cursor position
-func (g *SecretGrid) cursorIndex() int {
+func (g *Grid) cursorIndex() int {
 	return g.cursorRow*g.numCols + g.cursorCol
 }
 
-// SelectedSecret returns the currently selected secret
-func (g *SecretGrid) SelectedSecret() *models.Secret {
-	visibleSecrets := g.getVisibleSecrets()
+// SelectedEntry returns the currently selected entry
+func (g *Grid) SelectedEntry() *models.Entry {
+	visibleEntries := g.getVisibleEntries()
 	idx := g.cursorIndex()
 
-	if idx >= 0 && idx < len(visibleSecrets) {
-		return &visibleSecrets[idx]
+	if idx >= 0 && idx < len(visibleEntries) {
+		return &visibleEntries[idx]
 	}
 
 	return nil
 }
 
-// getVisibleSecrets returns the secrets visible on the current grid page
-func (g *SecretGrid) getVisibleSecrets() []models.Secret {
-	secretsPerPage := g.numCols * g.numRows
-	startIdx := g.gridPageIndex * secretsPerPage
-	endIdx := min(startIdx+secretsPerPage, len(g.filteredSecrets))
+// getVisibleEntries returns the entries visible on the current grid page
+func (g *Grid) getVisibleEntries() []models.Entry {
+	entriesPerPage := g.numCols * g.numRows
+	startIdx := g.gridPageIndex * entriesPerPage
+	endIdx := min(startIdx+entriesPerPage, len(g.filteredEntries))
 
-	if startIdx >= len(g.filteredSecrets) {
-		return []models.Secret{}
+	if startIdx >= len(g.filteredEntries) {
+		return []models.Entry{}
 	}
 
-	return g.filteredSecrets[startIdx:endIdx]
+	return g.filteredEntries[startIdx:endIdx]
 }
 
 // moveUp moves cursor up or to previous grid page
-func (g *SecretGrid) moveUp() {
+func (g *Grid) moveUp() {
 	if g.cursorRow > 0 {
 		g.cursorRow--
 		g.validateCursorPosition()
@@ -183,14 +194,14 @@ func (g *SecretGrid) moveUp() {
 }
 
 // moveDown moves cursor down or to next grid page
-func (g *SecretGrid) moveDown() {
+func (g *Grid) moveDown() {
 	newRow := g.cursorRow + 1
 
 	// Check if we can move down in current page
 	if newRow < g.numRows {
 		idx := newRow*g.numCols + g.cursorCol
-		visibleSecrets := g.getVisibleSecrets()
-		if idx < len(visibleSecrets) {
+		visibleEntries := g.getVisibleEntries()
+		if idx < len(visibleEntries) {
 			g.cursorRow = newRow
 			return
 		}
@@ -204,28 +215,28 @@ func (g *SecretGrid) moveDown() {
 }
 
 // moveLeft moves cursor left
-func (g *SecretGrid) moveLeft() {
+func (g *Grid) moveLeft() {
 	if g.cursorCol > 0 {
 		g.cursorCol--
 	}
 }
 
 // moveRight moves cursor right
-func (g *SecretGrid) moveRight() {
+func (g *Grid) moveRight() {
 	newCol := g.cursorCol + 1
 
 	// Check if we can move right in current row
 	if newCol < g.numCols {
 		idx := g.cursorRow*g.numCols + newCol
-		visibleSecrets := g.getVisibleSecrets()
-		if idx < len(visibleSecrets) {
+		visibleEntries := g.getVisibleEntries()
+		if idx < len(visibleEntries) {
 			g.cursorCol = newCol
 		}
 	}
 }
 
 // nextGridPage advances to the next grid page
-func (g *SecretGrid) nextGridPage() {
+func (g *Grid) nextGridPage() {
 	if g.gridPageIndex < g.totalGridPages-1 {
 		g.gridPageIndex++
 		g.cursorRow = 0
@@ -234,7 +245,7 @@ func (g *SecretGrid) nextGridPage() {
 }
 
 // prevGridPage goes to the previous grid page
-func (g *SecretGrid) prevGridPage() {
+func (g *Grid) prevGridPage() {
 	if g.gridPageIndex > 0 {
 		g.gridPageIndex--
 		g.cursorRow = 0
@@ -242,23 +253,23 @@ func (g *SecretGrid) prevGridPage() {
 	}
 }
 
-// applyFilter filters secrets by query
-func (g *SecretGrid) applyFilter(query string) {
+// applyFilter filters entries by query
+func (g *Grid) applyFilter(query string) {
 	g.filterQuery = query
 
 	if query == "" {
-		g.filteredSecrets = g.secrets
+		g.filteredEntries = g.entries
 	} else {
-		filtered := []models.Secret{}
+		filtered := []models.Entry{}
 		lowerQuery := strings.ToLower(query)
 
-		for _, secret := range g.secrets {
-			if strings.Contains(strings.ToLower(secret.Name), lowerQuery) {
-				filtered = append(filtered, secret)
+		for _, entry := range g.entries {
+			if strings.Contains(strings.ToLower(entry.Name), lowerQuery) {
+				filtered = append(filtered, entry)
 			}
 		}
 
-		g.filteredSecrets = filtered
+		g.filteredEntries = filtered
 	}
 
 	// Reset navigation state after filter
@@ -269,24 +280,24 @@ func (g *SecretGrid) applyFilter(query string) {
 }
 
 // clearFilter clears the current filter
-func (g *SecretGrid) clearFilter() {
+func (g *Grid) clearFilter() {
 	g.filterQuery = ""
 	g.filtering = false
 	g.applyFilter("")
 }
 
 // IsFiltering returns whether filter mode is active
-func (g *SecretGrid) IsFiltering() bool {
+func (g *Grid) IsFiltering() bool {
 	return g.filtering
 }
 
 // GetFilterQuery returns the current filter query
-func (g *SecretGrid) GetFilterQuery() string {
+func (g *Grid) GetFilterQuery() string {
 	return g.filterQuery
 }
 
 // Update handles keyboard input
-func (g *SecretGrid) Update(msg tea.Msg) tea.Cmd {
+func (g *Grid) Update(msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		// Handle filter mode
@@ -336,20 +347,20 @@ func (g *SecretGrid) Update(msg tea.Msg) tea.Cmd {
 }
 
 // View renders the grid
-func (g *SecretGrid) View() string {
-	visibleSecrets := g.getVisibleSecrets()
+func (g *Grid) View() string {
+	visibleEntries := g.getVisibleEntries()
 
-	if len(visibleSecrets) == 0 {
+	if len(visibleEntries) == 0 {
 		if g.filtering && g.filterQuery != "" {
 			return lipgloss.NewStyle().
 				Padding(2).
 				Foreground(lipgloss.Color("241")).
-				Render(fmt.Sprintf("No secrets match '%s'", g.filterQuery))
+				Render(fmt.Sprintf("No entries match '%s'", g.filterQuery))
 		}
 		return lipgloss.NewStyle().
 			Padding(2).
 			Foreground(lipgloss.Color("241")).
-			Render("No secrets found")
+			Render("No entries found")
 	}
 
 	// Build grid
@@ -361,15 +372,15 @@ func (g *SecretGrid) View() string {
 		for col := 0; col < g.numCols; col++ {
 			idx := row*g.numCols + col
 
-			if idx >= len(visibleSecrets) {
+			if idx >= len(visibleEntries) {
 				// Empty cell
 				break
 			}
 
-			secret := visibleSecrets[idx]
+			entry := visibleEntries[idx]
 			isSelected := (row == g.cursorRow && col == g.cursorCol)
 
-			cellsInRow = append(cellsInRow, g.renderCell(secret, isSelected))
+			cellsInRow = append(cellsInRow, g.renderCell(entry, isSelected))
 		}
 
 		if len(cellsInRow) > 0 {
@@ -392,9 +403,9 @@ func (g *SecretGrid) View() string {
 }
 
 // renderCell renders a single grid cell
-func (g *SecretGrid) renderCell(secret models.Secret, isSelected bool) string {
-	// Wrap the secret name to fit width (account for padding)
-	nameLines := g.wrapText(secret.Name, g.cellWidth-2)
+func (g *Grid) renderCell(entry models.Entry, isSelected bool) string {
+	// Wrap the entry name to fit width (account for padding)
+	nameLines := g.wrapText(entry.Name, g.cellWidth-2)
 
 	// Take only first 2 lines for the name (save room for date)
 	if len(nameLines) > 2 {
@@ -410,16 +421,16 @@ func (g *SecretGrid) renderCell(secret models.Secret, isSelected bool) string {
 
 	// Format the last modified date
 	dateStr := "Unknown"
-	if secret.LastChangedDate != nil {
-		dateStr = secret.LastChangedDate.Format("Jan 2, 2006")
+	if entry.LastModifiedDate != nil {
+		dateStr = entry.LastModifiedDate.Format("Jan 2, 2006")
 	}
 
 	// Style the name based on selection
 	var nameStyle lipgloss.Style
 	if isSelected {
-		// Selected: pink text, bold (no background)
+		// Selected: accent-coloured text, bold (no background)
 		nameStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("205")).
+			Foreground(g.accentColor).
 			Bold(true)
 	} else {
 		// Normal: light grey text
@@ -449,7 +460,7 @@ func (g *SecretGrid) renderCell(secret models.Secret, isSelected bool) string {
 }
 
 // wrapText wraps text to fit within maxWidth
-func (g *SecretGrid) wrapText(text string, maxWidth int) []string {
+func (g *Grid) wrapText(text string, maxWidth int) []string {
 	if text == "" {
 		return []string{""}
 	}

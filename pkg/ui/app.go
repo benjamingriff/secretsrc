@@ -37,10 +37,13 @@ type Model struct {
 	currentProfile string
 	currentRegion  string
 
-	// Secret data
-	secrets       []models.Secret
+	// Active data source (Secrets Manager or SSM Parameter Store)
+	mode models.Kind
+
+	// Entry data
+	entries       []models.Entry
 	selectedIndex int
-	secretValue   string
+	entryValue    string
 	secretFields  []components.SecretField
 	nextToken     *string
 	hasMore       bool
@@ -50,7 +53,7 @@ type Model struct {
 	currentPage int          // Current page index in history
 
 	// UI components
-	grid            components.SecretGrid
+	grid            components.Grid
 	fieldSelector   components.SecretFieldSelector
 	profileSelector components.ProfileSelector
 	regionSelector  components.RegionSelector
@@ -72,20 +75,20 @@ type Model struct {
 	showHelp      bool
 }
 
-// secretPage represents a page of secrets
+// secretPage represents a page of entries
 type secretPage struct {
-	secrets   []models.Secret
+	entries   []models.Entry
 	nextToken *string
 }
 
 // Custom messages
-type secretsLoadedMsg struct {
-	secrets   []models.Secret
+type entriesLoadedMsg struct {
+	entries   []models.Entry
 	nextToken *string
 	err       error
 }
 
-type secretValueLoadedMsg struct {
+type entryValueLoadedMsg struct {
 	value string
 	err   error
 }
@@ -116,14 +119,41 @@ type mfaTokenSubmittedMsg struct {
 	err   error
 }
 
+// Mode persistence values written to the config file.
+const (
+	modeStringSecrets = "secrets"
+	modeStringSSM     = "ssm"
+)
+
+// ParseMode converts a persisted mode string into a models.Kind, defaulting to
+// Secrets Manager for any unrecognised value.
+func ParseMode(s string) models.Kind {
+	if s == modeStringSSM {
+		return models.KindParameter
+	}
+	return models.KindSecret
+}
+
+// modeString converts a models.Kind into its persisted string form.
+func modeString(mode models.Kind) string {
+	if mode == models.KindParameter {
+		return modeStringSSM
+	}
+	return modeStringSecrets
+}
+
 // NewModel creates a new app model
-func NewModel(profile, region string) Model {
+func NewModel(profile, region string, mode models.Kind) Model {
+	grid := components.NewGrid(80, 20)
+	grid.SetAccentColor(accentColor(mode))
+
 	return Model{
 		currentScreen:  ScreenSecretList,
 		currentProfile: profile,
 		currentRegion:  region,
+		mode:           mode,
 		keys:           DefaultKeyMap(),
-		grid:           components.NewSecretGrid(80, 20),
+		grid:           grid,
 		loading:        true,
 	}
 }
@@ -162,6 +192,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Global keys
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
+		}
+
+		// Tab toggles between Secrets Manager and SSM Parameter Store from any
+		// screen (the shared credentials are reused).
+		if msg.String() == "tab" {
+			return m.toggleMode()
 		}
 
 		// Handle keys based on current screen
@@ -231,54 +267,60 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.currentRegion = msg.region
 		m.loading = true
 
-		// Save profile and region to config for next time
+		// Save profile, region and mode to config for next time
+		mode := m.mode
 		go func() {
 			cfg := &config.Config{
 				LastProfile: msg.client.GetProfile(),
 				LastRegion:  msg.client.GetRegion(),
+				LastMode:    modeString(mode),
 			}
 			_ = config.Save(cfg) // Ignore errors, don't block UI
 		}()
 
-		return m, loadSecrets(m.awsClient, 50, nil)
+		return m, loadEntries(m.awsClient, m.mode, 50, nil)
 
-	case secretsLoadedMsg:
+	case entriesLoadedMsg:
 		m.loading = false
 		if msg.err != nil {
-			m.errorMessage = fmt.Sprintf("Failed to load secrets: %v", msg.err)
+			m.errorMessage = fmt.Sprintf("Failed to load %s: %v", m.sourceNoun(true), msg.err)
 			return m, nil
 		}
-		m.secrets = msg.secrets
+		m.entries = msg.entries
 		m.nextToken = msg.nextToken
 		m.hasMore = msg.nextToken != nil
-		m.grid.SetSecrets(m.secrets)
+		m.grid.SetEntries(m.entries)
 		m.errorMessage = ""
 
 		// Update page history for the current page
 		if m.currentPage < len(m.pageHistory) {
 			// Updating existing page
 			m.pageHistory[m.currentPage] = secretPage{
-				secrets:   msg.secrets,
+				entries:   msg.entries,
 				nextToken: msg.nextToken,
 			}
 		} else {
 			// New page, add to history
 			m.pageHistory = append(m.pageHistory, secretPage{
-				secrets:   msg.secrets,
+				entries:   msg.entries,
 				nextToken: msg.nextToken,
 			})
 		}
 
 		return m, nil
 
-	case secretValueLoadedMsg:
+	case entryValueLoadedMsg:
 		m.loading = false
 		if msg.err != nil {
-			m.errorMessage = fmt.Sprintf("Failed to load secret value: %v", msg.err)
+			m.errorMessage = fmt.Sprintf("Failed to load value: %v", msg.err)
 			return m, nil
 		}
-		m.secretValue = msg.value
-		m.secretFields = parseSecretFields(msg.value)
+		m.entryValue = msg.value
+		// Only Secrets Manager values are parsed for top-level JSON fields;
+		// SSM parameters are treated as plain strings.
+		if m.mode == models.KindSecret {
+			m.secretFields = parseSecretFields(msg.value)
+		}
 		m.errorMessage = ""
 		return m, nil
 
@@ -311,21 +353,21 @@ func (m Model) handleSecretListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 
 	case "enter":
-		// View secret details
-		secret := m.grid.SelectedSecret()
-		if secret != nil {
+		// View entry details
+		entry := m.grid.SelectedEntry()
+		if entry != nil {
 			m.currentScreen = ScreenSecretDetail
 			m.clearSecretValueState()
 		}
 		return m, nil
 
 	case "r":
-		// Refresh secrets - clear pagination history
+		// Refresh entries - clear pagination history
 		m.loading = true
 		m.nextToken = nil
 		m.pageHistory = nil
 		m.currentPage = 0
-		return m, loadSecrets(m.awsClient, 50, nil)
+		return m, loadEntries(m.awsClient, m.mode, 50, nil)
 
 	case "n":
 		// Load next page
@@ -335,15 +377,15 @@ func (m Model) handleSecretListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.currentPage < len(m.pageHistory) {
 				// Load from history
 				page := m.pageHistory[m.currentPage]
-				m.secrets = page.secrets
+				m.entries = page.entries
 				m.nextToken = page.nextToken
 				m.hasMore = page.nextToken != nil
-				m.grid.SetSecrets(m.secrets)
+				m.grid.SetEntries(m.entries)
 				return m, nil
 			}
 			// Need to fetch new page
 			m.loading = true
-			return m, loadSecrets(m.awsClient, 50, m.nextToken)
+			return m, loadEntries(m.awsClient, m.mode, 50, m.nextToken)
 		}
 		return m, nil
 
@@ -352,10 +394,10 @@ func (m Model) handleSecretListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.currentPage > 0 {
 			m.currentPage--
 			page := m.pageHistory[m.currentPage]
-			m.secrets = page.secrets
+			m.entries = page.entries
 			m.nextToken = page.nextToken
 			m.hasMore = page.nextToken != nil || m.currentPage < len(m.pageHistory)-1
-			m.grid.SetSecrets(m.secrets)
+			m.grid.SetEntries(m.entries)
 		}
 		return m, nil
 
@@ -397,31 +439,31 @@ func (m Model) handleSecretDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "v":
-		// View secret value
-		secret := m.grid.SelectedSecret()
-		if secret != nil && m.secretValue == "" {
+		// View entry value
+		entry := m.grid.SelectedEntry()
+		if entry != nil && m.entryValue == "" {
 			m.loading = true
-			return m, loadSecretValue(m.awsClient, secret.Name)
+			return m, loadEntryValue(m.awsClient, m.mode, entry.Name)
 		}
 		return m, nil
 
 	case "c":
 		// Copy plain text
-		if m.secretValue != "" {
-			return m, copyToClipboard(m.secretValue, false)
+		if m.entryValue != "" {
+			return m, copyToClipboard(m.entryValue, false)
 		}
 		return m, nil
 
 	case "j":
-		// Copy JSON formatted
-		if m.secretValue != "" {
-			return m, copyToClipboard(m.secretValue, true)
+		// Copy JSON formatted (Secrets Manager only; parameters are plain strings)
+		if m.mode == models.KindSecret && m.entryValue != "" {
+			return m, copyToClipboard(m.entryValue, true)
 		}
 		return m, nil
 
 	case "k":
-		// Copy a top-level JSON field value
-		if len(m.secretFields) > 0 {
+		// Copy a top-level JSON field value (Secrets Manager only)
+		if m.mode == models.KindSecret && len(m.secretFields) > 0 {
 			contentWidth, contentHeight := m.contentViewportSize()
 			m.fieldSelector = components.NewSecretFieldSelector(m.secretFields, contentWidth, contentHeight)
 			m.currentScreen = ScreenSecretFieldSelector
@@ -603,31 +645,48 @@ func initAWSClient(profile, region string) tea.Cmd {
 	}
 }
 
-// loadSecrets loads secrets from AWS
-func loadSecrets(client *aws.Client, maxResults int32, nextToken *string) tea.Cmd {
+// loadEntries loads entries from AWS for the active mode
+func loadEntries(client *aws.Client, mode models.Kind, maxResults int32, nextToken *string) tea.Cmd {
 	return func() tea.Msg {
 		if client == nil {
-			return secretsLoadedMsg{err: fmt.Errorf("AWS client not initialized")}
+			return entriesLoadedMsg{err: fmt.Errorf("AWS client not initialized")}
 		}
 		ctx := context.Background()
-		secrets, token, err := client.ListSecrets(ctx, maxResults, nextToken)
-		return secretsLoadedMsg{
-			secrets:   secrets,
+
+		var entries []models.Entry
+		var token *string
+		var err error
+		if mode == models.KindParameter {
+			entries, token, err = client.ListParameters(ctx, maxResults, nextToken)
+		} else {
+			entries, token, err = client.ListSecrets(ctx, maxResults, nextToken)
+		}
+
+		return entriesLoadedMsg{
+			entries:   entries,
 			nextToken: token,
 			err:       err,
 		}
 	}
 }
 
-// loadSecretValue loads a secret value from AWS
-func loadSecretValue(client *aws.Client, secretName string) tea.Cmd {
+// loadEntryValue loads an entry value from AWS for the active mode
+func loadEntryValue(client *aws.Client, mode models.Kind, name string) tea.Cmd {
 	return func() tea.Msg {
 		if client == nil {
-			return secretValueLoadedMsg{err: fmt.Errorf("AWS client not initialized")}
+			return entryValueLoadedMsg{err: fmt.Errorf("AWS client not initialized")}
 		}
 		ctx := context.Background()
-		value, err := client.GetSecretValue(ctx, secretName)
-		return secretValueLoadedMsg{
+
+		var value string
+		var err error
+		if mode == models.KindParameter {
+			value, err = client.GetParameterValue(ctx, name)
+		} else {
+			value, err = client.GetSecretValue(ctx, name)
+		}
+
+		return entryValueLoadedMsg{
 			value: value,
 			err:   err,
 		}
@@ -642,9 +701,61 @@ func clearStatusAfter(delay time.Duration) tea.Cmd {
 }
 
 func (m *Model) clearSecretValueState() {
-	m.secretValue = ""
+	m.entryValue = ""
 	m.secretFields = nil
 	m.fieldSelector = components.SecretFieldSelector{}
+}
+
+// toggleMode switches between Secrets Manager and SSM Parameter Store, resetting
+// list/detail state and re-fetching from the new source. It is a no-op while an
+// MFA code is being entered or before the shared client is ready.
+func (m Model) toggleMode() (tea.Model, tea.Cmd) {
+	if m.currentScreen == ScreenMFAInput || m.awsClient == nil {
+		return m, nil
+	}
+
+	if m.mode == models.KindParameter {
+		m.mode = models.KindSecret
+	} else {
+		m.mode = models.KindParameter
+	}
+
+	// Reset all list/detail state for the new source.
+	m.currentScreen = ScreenSecretList
+	m.clearSecretValueState()
+	m.nextToken = nil
+	m.pageHistory = nil
+	m.currentPage = 0
+	m.errorMessage = ""
+	m.loading = true
+	m.grid.SetAccentColor(accentColor(m.mode))
+
+	// Persist the mode (with the current profile/region) for next launch.
+	profile, region, mode := m.currentProfile, m.currentRegion, m.mode
+	go func() {
+		cfg := &config.Config{
+			LastProfile: profile,
+			LastRegion:  region,
+			LastMode:    modeString(mode),
+		}
+		_ = config.Save(cfg) // Ignore errors, don't block UI
+	}()
+
+	return m, loadEntries(m.awsClient, m.mode, 50, nil)
+}
+
+// sourceNoun returns a human-readable noun for the active data source.
+func (m Model) sourceNoun(plural bool) string {
+	if m.mode == models.KindParameter {
+		if plural {
+			return "parameters"
+		}
+		return "parameter"
+	}
+	if plural {
+		return "secrets"
+	}
+	return "secret"
 }
 
 // copyToClipboard copies the value to clipboard
